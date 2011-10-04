@@ -1,0 +1,381 @@
+%
+% Relazione del progetto di Logica Computazionale II
+% di A.Carcano
+%    M.Carullo
+%
+% Tema: Implementazione di schemi di criptografia a chiave pubblica
+%
+\documentclass[a4paper, 12pt]{article}
+\usepackage[a4paper]{geometry}
+\usepackage[english, italian]{babel}
+\usepackage{textcomp}
+\usepackage{url}
+\usepackage{fancybox}
+\usepackage{multirow}
+\usepackage{amsfonts}
+\usepackage{float}
+\usepackage{color}
+
+%%%%%%%%%%%%% NUOVI COMANDI E IMPOSTAZIONI %%%%%%%%%%%
+\newcommand{\codice}[1]{\protect\texttt{\small{#1}}}
+\newcommand{\byandrea}{\protect{
+  \textcolor{blue}{[Andrea]}}
+}
+\definecolor{MorenoVerde}{rgb}{0.2,0.9,0.4} 
+\newcommand{\bymoreno}{\protect{
+  \textcolor{MorenoVerde}{[Moreno]}}
+}
+
+\linespread{1.0}
+
+
+%%%%%%%%%%%%%%%%% GESTIONE IMMAGINI %%%%%%%%%%%%%%%%%%
+\newif\ifpdf
+\ifx\pdfoutput\undefined
+\pdffalse % no pdflatex
+\else
+\pdfoutput=1 % pdflatex
+\pdftrue
+\fi
+%
+\ifpdf
+\usepackage[pdftex]{graphicx}
+\DeclareGraphicsExtensions{.pdf,.mps,.png,.jpg}
+\usepackage[pdftex]{hyperref}
+\else
+\usepackage{graphicx}
+\DeclareGraphicsExtensions{.eps}
+\fi
+
+%%%%%%%%%%%%%%%%%% METADATI DOCUMENTO %%%%%%%%%%%%%%%%%%
+%\title{Progetto del corso di Logica Computazionale II}
+\title{PLATAM: implementazione in Prolog\\ di Tecniche criptografiche basate su reticoli}
+\author{Andrea Carcano (61040) e Moreno Carullo (608371)\\ \url{andrea.carcano@gmail.com, moreno.carullo@pulc.it}}
+\date{maggio-luglio 2007}
+
+%%%%%%%%%%%%%%%%%% INIZIO DOCUMENTO %%%%%%%%%%%%%%%%%%
+\begin{document}
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduzione}
+
+La maggior parte degli schemi di cifratura a chiave pubblica affida la propria sicurezza a due problemi difficili: la fattorizzazione di interi ed il logaritmo discreto su campi finiti. I due problemi inoltre sembrano essere correlati, di conseguenza algoritmi efficienti per l'uno si applicano con alcune modifiche anche all'altro.
+
+Questo potrebbe essere potenzialmente pericoloso, poich\`e gli algoritmi utilizzati quotidianamente (RSA per esempio) nelle transazioni bancarie, finanziarie e commerciali appoggiano la loro sicurezza sull'intrinseca difficolta dei problemi sopra menzionati. Si aggiunga inoltre il fatto che se in futuro le tecnologie di quantum computing riuscissero ad arrivare in qualche modo alla produzione industriale, seppur di piccola scala, le versioni quantistiche degli algoritmi per la risoluzione della fattorizzazione di interi potrebbero creare un vero e proprio problema di sicurezza. Questo tuttavia rimane ancora nel futuribile, dal momento che allo stato attuale delle cose la produzione in scala di elaboratori quantistici  sembra ancora irraggiungibile.
+
+Nasce quindi l'esigenza di cercare altri problemi computazionalmente difficili, magari imponendo la difficolt\`a di risoluzione anche con algoritmi quantistici. Negli ultimi dieci anni di ricerca una delle tecniche criptografiche alternative venute alla luce costruisce la sicurezza attorno ai reticoli (\emph{lattice} in inglese), una costruzione algebrico-geometrica su cui sono definiti alcuni problemi NP-hard.
+
+Il documento \`e strutturato in altre cinque sezioni:
+
+\begin{itemize}
+	\item[-] sezione \ref{sec:lattice}, dove si analizzano gli algoritmi e gli schemi implementati nel presente progetto.
+
+	\item[-] sezione \ref{sec:requisiti}, dove vengono presentati ad alto livello i predicati che si vogliono ottenere, e dove verranno fatte alcune considerazioni in merito ai costi ed ai limiti incontrati nell'implementazione Prolog.
+
+	\item[-] sezione \ref{sec:moduli}, dove viene dettagliata la suddivisione in moduli dell'implementazione, e dove per ogni modulo ne viene documentata la struttura e le scelte particolari relative ai predicati ivi contenuti.
+	
+	\item[-] sezione \ref{provequery}, dove viene esemplificato l'utilizzo del programma per mezzo di query.
+	
+	\item[-] infine le conclusioni in cui vengono tirate le somme del progetto realizzato.
+\end{itemize}
+
+Le fasi di definizione dei requisiti di alto livello e la suddivisione in moduli sono state portate avanti parallelamente da entrambi gli autori, nessuna nota verr\`a quindi aggiunta in tali sezioni del documento. Nella sezione \ref{sec:moduli} verr\`a invece dettagliato per ogni predicato o gruppo di predicati l'autore dell'implementazione.
+\textbf{PLATAM} \`e acronimo di \textbf{P}rolog \textbf{LAT}tice by \textbf{A}ndrea e \textbf{M}oreno.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Tecniche criptografiche basate su reticoli}\label{sec:lattice}
+Le tecniche criptografiche basate su reticoli consentono di costruire algoritmi di cifratura a chiave pubblica, di firma digitale, e di dimostrare la correttezza di funzioni hash criptografiche. In questo progetto si \`e voluto realizzare un'implementazione di schema di cifratura a chiave pubblica ed un'implementazione di funzione hash criptografica.
+
+Le costruzioni e gli algoritmi a cui faremo riferimento sono documentate nei lavori di Goldreich et al., rispettivamente in \cite{Goldreich96} per la funzione hash criptografica \emph{collision resistant} ed in \cite{Goldreich97} per lo schema a chiave pubblica.
+L'implementazione qui documentata segue pi\`u o meno letteralmente quanto si pu\`o trovare nei due paper, con i dovuti adattamenti necessari per venire incontro ai limiti dei programmi Prolog: in particolare si richiedeva la capacit\`a di effettuare operazioni complesse su matrici (moltiplicazione, determinante, inversione), dal punto di vista pratico la dimensione di tali matrici su cui opereremo sar\`a per forza di cose ridotta.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Reticoli}
+Un reticolo $L(B)$ \`e definito dall'insieme finito $B = \langle b_1,\ldots,b_n \rangle$ di vettori $b_i \in \mathbb{R}^n$ linearmente indipendenti, pi\`u precisamente \`e costituito da tutti i vettori generati come combinazione lineare della \emph{base} B a coefficienti interi:
+%
+\begin{eqnarray*}
+L(B) = \left\{ \sum_{i}^{n}{a_i b_i}~:~a_i~\in \mathbb{Z} \right\}
+\end{eqnarray*}
+%
+
+Dato un reticolo $L$ sono definiti tre problemi difficili, correlati tra loro:
+
+\begin{itemize}
+
+	\item[-] \textbf{Vettore pi\`u piccolo} (\emph{SVP}, Shortest Vector Problem):  data una base $B$ trovare $p \in L(B): \|p\| < \|x\|,~\forall x \in L(B)$.
+
+	\item[-] \textbf{Vettore pi\`u vicino} (\emph{CVP}, Closest Vector Problem): data una base $B$ ed un punto $c \in R^n$, trovare il punto $p \in L(B)$ pi\`u vicino a $c$.
+
+	\item[-] \textbf{Base pi\`u piccola} (\emph{SBP}, Smallest Vector Problem) data la base $B$ di $L(B)$, trovare una base $B' : L(B') = L(B)$ con difetto ortogonale minimo. Non esiste un algoritmo polinomiale in $n$, dove $n$ \`e la dimensione del reticolo
+
+\end{itemize}
+
+Esistono principalmente due algoritmi per la risoluzione approssimata di questi problemi: LLL e la tecnica di arrotondamento di Babai (\emph{Babai Roundoff}). Il primo risolve direttamente il problema SBP con un fattore di approssimazione esponenziale in \emph{n} e come conseguenza di questo ottiene un'approssimazione del problema SVP. Il secondo ottiene un'approssimazione di \emph{CVP}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Funzione hash criptografica}\label{sec:hashfunc}
+Al fine di definire una funzione hash con i parametri di sicurezza $n, m, q$ (dove $n~log(q) < m \le \frac{q}{2n^4}$ e $q = O\left(n^c\right)$) serve considerare una matrice $M \in \mathbb{Z}_{p}^{n \times m}$ ed una stringa $s \in \{0,1\}^m$, la funzione $h_M(s)$ \`e quindi definita nel modo seguente:
+%
+\begin{eqnarray*}
+h_M(s) = M s~\textrm{mod}~q = \sum_{i}{s_i M_i~\textrm{mod}~q}
+\end{eqnarray*}
+%
+
+tale funzione gode della propriet\`a ``collision-free'', ovvero risulta molto difficile/improbabile trovare due stringe $s$ ed $s'$ tali che $h_M(s) = h_M(s')$: la dimostrazione di sicurezza viene data in~\cite{Goldreich96}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Cifratura a chiave pubblica }
+
+La cifratura a chiave pubblica prevede due funzioni Enrypt e Decrypt: la prima data una chiave pubblica ed un messaggio \emph{plaintext} produce un messaggio cifrato, il \emph{cyphertext}; la seconda dato un \emph{cyphertext} e la coppia di chiavi pubblica e privata ottiene nuovamente il \emph{plaintext}. Vengono di seguito descritte le versioni basate su reticoli delle due funzioni:
+
+\begin{description}
+	\item{\textbf{Encrypt}} preso in input $\vec{x}$ un vettore di interi e $B,\sigma,\vec{e}$ restituisce $c = f_{B,\sigma}(\vec{x}, \vec{e}) \equiv B\vec{x} + \vec{e}$.
+	\begin{itemize}
+		\item il vettore $\vec{x}$ rappresenta il messaggio in forma binaria da cripatare.
+		\item il vettore $\vec{e}$ \`e generato random in $\mathbb{R}^n$
+		\item ogni componente di $\vec{e}$ pu\`o valere $\pm \sigma$ con probabilit\`a $1/2$ 
+	\end{itemize}
+
+	\item{\textbf{Decrypt}} dati $R,c,B$ in input si inverte la funzione utilizzando \emph{Babai's round off algorithm} o \textbf{LLL}
+		\begin{itemize}
+			\item tramite $R$ si trova il punto del lattice $p$, tramite una versione approssimata di CVP.
+			\item si calcola $x=B^-1p$ 
+		\end{itemize}
+\end{description}
+
+si rimanda al paper di Golderich et al.~\cite{Goldreich97} per i dettagli e la dimostrazione di sicurezza.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Requisiti e definizione Prolog del problema}\label{sec:requisiti}
+
+I requisiti alla base dell'implementazione proposta in questo progetto definiscono cinque predicati di alto livello, a cui dov\`a essere affiancato un numero opportuno di predicati ausiliari e non.
+
+\begin{itemize}
+	\item[-] un predicato che data una matrice $M$ ed una stringa binaria $s$ calcoli la funzione hash definita nella sezione \ref{sec:lattice}.
+	
+	\item[-] un predicato di generazione della chiave privata, da usarsi nella cifratura asimmetrica.
+	
+	\item[-] un predicato di generazione della chive pubblica, da usarsi nella cifratura asimmetrica.
+	
+	\item[-] un predicato di criptazione che data la chiave pubblica ed un messaggio in chiaro (plaintext) fornisca in uscita la versione cifrata (cyphertext).
+	
+	\item[-] un predicato di decifratura che data la coppia chiave privata/chiave pubblica ed un messaggio cifrato permetta di risalire al plaintext.
+\end{itemize}
+
+Nel presente documento verr\`a utilizzata la sintassi PlDoc~\cite{Pldoc} nell'illustrare i predicati, quindi  gli argomenti dei predicati saranno preceduti da un + ad indicare la sua istanziazione in una query, e dal simbolo ? qualora l'istanziazione non sia richiesta. L'implementazione Prolog utilizzata per lo sviluppo ed il test del progetto \`e SWI-Prolog 5.6.34 nelle versioni per Linux e Mac OS X.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Suddivisione in moduli}\label{sec:moduli}
+La definizione dei moduli sar\`a effettuata nel modo pi\`u semplice possibile, cercando di evitare predicati e direttive specifiche di un particolare interprete Prolog. Di conseguenza non vengono utilizzati predicati extralogici per la definizione della visibilit\`a al di fuori del modulo, ma solamente una versione pi\`u corretta del predicato consult per il caricamento dei moduli esterni: \codice{ensure\_loaded(FILE)}.
+
+Le tecniche criptografiche basate su reticoli si basano sul calcolo matriciale su campi finiti: sar\`a quindi necessario un modulo matrici, che a sua volta conterr\`a al suo interno operazioni di base su vettori e liste. Si richiedono quindi tre moduli di utilit\`a:
+
+\begin{enumerate}
+	\item liste
+	\item vettori
+	\item matrici
+\end{enumerate}
+
+A questi si aggiungono i due moduli dedicati rispettivamente alla funzione hash criptografica ed alla cifratura a chiave pubblica. \`E bene notare che la suddivisione tra gli autori dei predicati non \`e esaustiva, dal momento che i predicati ``minori'' non vengono qui commentati.
+
+%
+%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Modulo liste}
+Contiene 15 predicati, tra cui alcuni elementari come il calcolo della lunghezza di una lista, del massimo e del minimo. Verranno documentati quelli non gi\`a meglio commentati nel libro del corso:
+
+\begin{itemize}
+	\item[-] \codice{lista\_elem(+Lista, +Posizione, ?EnnesimoElemento)}: restituisce il valore contenuto nella posizione data in input. \byandrea
+	
+	\item[-] \codice{lista\_elem\_canc(+Lin,+N,?Lout)}: istanzia nella variabile Lout con una la lista di partenza meno l'elemanto in posizione N. \byandrea
+
+	\item[-] \codice{lista\_notnull(+Lista,?Pos,?A)}: data una Lista istanzia A con il primo elemento della lista diverso da zero, e Pos con la posizione in cui tale elemento si trova. \bymoreno
+	
+	\item[-] \codice{list\_join(+Lista1,+Lista2,?Lista3)}: istanzia la variabile Lista3 con la concatenazione in coda della  Lista2 alla Lista1. \bymoreno
+	
+	\item[-] \codice{list\_blank(?Lista,+Lunghezza)}: istanzia la variabile Lista con una lista di Lunghezza specificata. \bymoreno
+	
+	\item[-] \codice{lista\_fillto(+ListaIn,?ListaOut,+Lunghezza)}: istanzia la variabile ListaOut con una lista di Lunghezza desiderata, in cui i primi elementi sono coincidenti con quelli di ListaIn ed i rimanenti sono messi a 0. \bymoreno
+	
+	\item[-] \codice{lista\_scroll(+Lista,?ListaRisult)}: ruota la Lista ed istanzia in ListaRisult il risultato, dove per ruotare si intende prendere il primo elemento in testa e spostarlo in coda. \bymoreno
+	
+	\item[-] \codice{lista\_cut\_length(+Lista,+Lunghezza,?ListaTagliata)}: istanzia nella variabile ListaTagliata i primi Lunghezza elementi di Lista. \bymoreno
+	
+	\item[-] \codice{lista\_split(+Lista,+Block,?Out)}: divide la Lista in blocchi la cui dimensione \`e specificata dal parametro Block, ed istanza in Out una lista di liste lunghe al pi\`u Block. \bymoreno
+		
+\end{itemize}
+
+%
+%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Modulo vettori}
+Questo modulo \`e stato realizzato da Moreno e Andrea.
+Il modulo contiene al suo interno alune operazioni elementari eseguite sui vettori:
+\begin{itemize}
+	\item[-] \codice{vector\_number\_mult(+Vettore,+Numero,?VettoreRisultato)}: di interesse pubblico, moltiplica ogni componente di un Vettore per un numero. \byandrea
+	
+	\item[-] \codice{vector\_sum(+Vector1,+Vector2,?Result)}: somma due vettori dati in ingresso.\byandrea
+
+	\item[-] \codice{vector\_sum\_if0(+Vettore1,+Vettore2,?Result)}: restituisce in Result la somma dell'$i$-esima componente di Vettore2 a Vettore1 se questa \`e uguale 0, altrimenti mantiene il valore di Vettore1.\bymoreno
+	
+	\item[-] \codice{vector\_sum\_gf(+Vector1,+Vector2,?Result,+Gf)}: somma due vettori in ingresso sul campo di Galois\byandrea
+	
+	\item[-] \codice{vector\_random\_gf(?Vector,+Rows,+Columns,+Gf)}: genera un vettore random sul campo di Galois \byandrea
+	
+	\item[-] \codice{vector\_random\_int(+N,+Intervallo,?Vout)}: genera un vettore calcolando ogni componenete in modo random all'interno di un intervallo. \byandrea
+	
+	\item[-] \codice{vector\_round(+Vettore,?VettoreRounded)}: arrotonda ogni componente del vettore d'ingresso all'intero pi\`u vicino. \byandrea
+	
+	\item[-] \codice{vector\_dot\_product(+Vector1,+Vector2,?Result)}: esegue il prodotto scalare tra Vector1 e Vector2 ed istanzia il risultato in Result. Esiste anche una variante del predicato che opera su campi finiti, definita in modo analogo ma con postfisso \codice{\_gf} e con l'ulteriore parametro Gf che specifica la dimensione del campo. \bymoreno
+	
+	
+\end{itemize}
+
+Sono state inoltre implementate alcune funzioni che trovano la loro utilit\`a nel calcolo delle basi pubbliche e private
+\begin{itemize}
+	\item[-] \codice{vector\_error(+Dimensione,+Sigma,?Vout)}: genera un vettore random di dimesione \textit{N} assegnando a ogni componente $\pm \sigma$ \byandrea
+	\item[-] \codice{vector\_uno(+Dim,+Pos,?Vout)}: genera un vettore di 0 mettendo 1 nella posizione data in input. Questo predicato di interesse pubblico viene utilizzato nel modulo metrici per generare la matrice identica. \byandrea
+	\item[-] \codice{vector\_random\_noise(?VettoreRandom,+Rows)}: genera un vettore detto di rumore. Ogni elemento può assumere un valore che varia tra $\left\langle -1,0,1\right\rangle.$ Il predicato \`e utilizzato all'interno del modulo chiave pubblica per generare partendo dalla chiave privata(una matrice a basso difetto ortogonale) la chiave poubblica.
+		\item[-] \codice{vector\_round(+Vettore,?VettoreRounded)}: Arrotonda un vettore di reali all'intero pi\`u vicino.
+\end{itemize}
+
+%
+%
+%-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Modulo matrici}
+
+Il modulo prevede che le matrici vengano rappresentate per mezzo di una lista di liste, ed in particolare una lista di colonne. Alcuni dei predicati richiedono che la matrice sia quadrata: questo perch\`e negli schemi di cifratura a chiave pubblica le matrici su cui si opera sono sempre quadrate, ed il conteggio unificato di colonne e righe consente di evitare alcuni sottogoal. 
+
+\begin{itemize}
+
+	\item[-] \codice{matrix\_det(+Matrice,?Det)}: il predicato calcola il determinante di una matrice quadrata 2x2, 3x3 (con regola di Sarrus) e 4x4 (con espansione di Sarrus) e NxN con la condensazione pivotale~\cite{Chio}. La presenza di 3 differenti \emph{casi base} permette di ridurre la profondit\`a dell'albero di dimostrazione, permettendo quindi di aumentare la dimensione massima della matrice su cui \`e possibile calcolare il determinante. Il predicato \`e deterministico, e viene fatto uso del taglio per semplificarne la struttura. \`E stato inoltre segnato come \emph{dinamico}, consentendo cos\`i l'utilizzo dei predicati della famiglia \codice{assert*()} e \codice{retract*()}. \bymoreno
+
+	\item[-] \codice{matrix\_build\_piv(+Matrice,?Det)}: costruisce la condensazione pivotale della matrice in ingresso, effettuando l'espansione seguendo la prima riga. Vengono utilizzati due predicati ausiliari per la gestione del calcolo degli elementi per ogni riga e per ogni colonna, ed in tutti viene fatto uso del taglio verde. \bymoreno
+
+	\item[-] \codice{matrix\_invert(+Matrice,?MatriceInversa)}: inverte Matrice e restituisce il risultato in MatriceInversa, utilizzando il calcolo dei minori. Il predicato \`e stato definito in due versioni: la prima per calcolare immediatamente la matrice inversa nel caso di dimensione 2x2 e la seconda per il caso generico, tagliando con un cut verde nel caso di unificazione con la prima versione. Cos\`i come per il determinante sono stati definiti due predicati ausiliari per il calcolo degli elementi di ogni riga e di ogni colonna. Per evitare di aggiungere ad ogni predicato l'argomento ``numero di righe'' \`e stato fatto uso dei predicati \codice{asserta()} e \codice{retract()}. \bymoreno
+	
+	\item[-] \codice{matrix_random_gf(?Matrix,+Row,+Columns,+Gf)}: preso in input il campo Galois, il numero di righe e il numero di colonne genera una matrice random all'interno del campo specificato. Ogni colonna viene generata casualmente utilizzando il predicato \textit{vector\_random\_gf} definito nel modulo vettori. \byandrea
+	 
+	 \item[-] \codice{matrix_random_inteval(?Matrix,+Row,+Columns,+Int)}: genera una matrice random in un intervallo dato in input. \byandrea
+
+	\item[-] \codice{matrix\_elem(+Matrix,+Row,+Col,?A)}: restituisce l'elemento alla riga Row e alla colonna Col, utilizza al suo interno il predicato \textit{lista\_elem} definito nel modulo liste. \byandrea
+	
+	\item[-] \codice{matrix\_i(?M,+Rows,+Cols)}: genera la Matrice identica, utilizzando il predicato definito nel modulo vettori: \textit{vector\_unoi}\byandrea
+	\item[-] \codice{matrix\_addnoise(+M,+I, +Dim,?Mout)}: aggiunge nella colonna I del rumore. Per rumore s'intende un vettore dove ogni componente pu\`o valere $\left\langle -1,0,1\right\rangle.$ \byandrea
+\end{itemize}
+
+Non vengono qui riportati e commentati tutti i predicati di utilit\`a utilizzati all'interno del modulo, ed in particolare da quelli pi\`u sostanziosi come \codice{matrix\_det} e \codice{matrix\_invert()} .
+Vengono poi definite tutte le operazioni base che si possono efettuare su una matrice come ad esempio Moltiplicazione tra due matrici e tra una matrice e un vettore.
+%
+%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Modulo hash criptografico}
+In questo modulo viene implementata la funzione hash criptografica descritta nella sezione \ref{sec:lattice}. Al suo interno si trova un'unico predicato di interesse pubblico e due utilizzati internamente.
+
+\begin{itemize}
+	\item[-] \codice{latthash\_check\_sp(+N,+M,+Q)}: verifica che i tre parametri di sicurezza soddisfino i vincoli dettagliati nella sezione \ref{sec:hashfunc}. \bymoreno
+
+	\item[-] \codice{latthash\_base(+Mat,+Gf,+BlockString,?Hash)}: di interesse privato, applica la funzione hash definita dalla matrice \emph{Mat} su di un singolo blocco \emph{BlockString} istanziando nella variabile \emph{Hash} il risultato. La funzione hash criptografica, descritta in \cite{Goldreich96}, \`e una moltiplicazione di matrici sul campo di Galois \emph{Gf} - a tale semplice definizione corrisponde una complessa dimostrazione di sicurezza basata sul problema CVP. \bymoreno
+	
+	\item[-] \codice{latthash(+Mat,+Gf,+LongString,?Hash)}: di interesse pubblico, applica la funzione di hash sulla lista \emph{LongString} ed istanzia la variabile \emph{Hash} con il risultato. La matrice \emph{Mat} ed il campo di Galois \emph{Gf} identificano una particolare istanza della funzione hash. \bymoreno
+	
+	\item[-] \codice{latthash\_list(+Mat,+Gf,+BlockList,?Hash)}: di interesse privato, \`e utilizzato dal predicato precedente per applicare la funzione hash su liste di numeri lunghe a piacere. La definizione della testa del predicato al contrario delle precedenti ha come terzo argomento una lista di liste, su cui viene applicato induttivamente il predicato di base. \bymoreno
+	
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Modulo chiave pubblica}
+
+I predicati di tale modulo utilizzano le funzioni offerte dalle librerie vettori, liste e matrici per implementare la cifratura a chiave pubblica basata su reticoli.
+
+\begin{itemize}
+	\item[-] \codice{lattice\_pk\_priv\_gen(+Dimensione,+Maxint,?R)}: genera la chiave privata della dimensione specificata ed i cui valori risiedono in un intervallo definito da Maxint, ed il risultato \`e restituito nell'istanziazione di R. La generazione della chiave prevede la creazione di una matrice random a cui viene aggiunta una matrice ottenuta moltiplicando la matrice identica (in cui ad una delle colonne viene aggiunto del rumore) per lo scalare $2n$, dove $n$ \`e la dimensione specificata. \byandrea
+	
+	\item[-] \codice{lattice\_pk\_pub\_gen(+PrivateKey, ?PublicKey)}: genera la chiave pubblica partendo dalla chiave privata. La generazione della chiave prevede la moltiplicazione della matrice(private key) per una matrice identica a cui viene aggiunto del rumore. All'ennsimo passaggio viene modificata l'ennesima colonna della matrice identica.
+	
+	
+	
+	\byandrea
+	
+	\item[-] \codice{lattice\_pk\_encrypt(+PlainText,?CypherText,+ChiavePubblica)}: cifra il messaggio PlainText utilizzando la ChiavePubblica ed istanzia CypherText con il \emph{cyphertext}. Al suo interno utilizza alcuni predicati ausiliari che consentono di gestire Messaggi di lunghezza arbitraria, ed i predicati \codice{asserta()} e \codice{retract()} per evitare da una parte l'aggiunta di un ulteriore parametro e dall'altra l'invocazione di goal complessi ad ogni iterazione: questo \`e utile per esempio per la gestione della dimensione della matrice. \bymoreno
+	
+	\item[-] \codice{lattice\_pk\_decrypt(+CypherText,?PlainText,+PrivateKey,+PublicKey)}: decifra il CypherText utilizzando la coppia chiave pubblica e chiave privata, ed istanzia in PlainText il risultato della trasformazione inversa. Al pari del predicato di cifratura utilizza i predicati \codice{asserta()} e \codice{retract()} per la generazione di lemmi utili ad evitare la ripetizione di sottorami nell'albero di dimostrazine. \bymoreno
+
+\end{itemize}
+
+I predicati qui presentati consentono di operare su messaggi di lunghezza arbitraria, per questo motivo fanno uso di predicati ausiliari per la suddivisione del compito in operazioni pi\`u semplici. In particolare i predicati di cifratura e decifratura dividono il messaggio da decifrare in blocchi: in seguito all'applicazione di un predicato che opera su blocchi di lunghezza fissa i sotto-cyphertext vengono concatenati nuovamente ed istanziati nella variabile di ritorno.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Prove di query}\label{provequery}
+Vengono qui riportate alcune prove di query, utili alla sperimentazione pratica con i predicati del progetto.
+
+%
+%
+\subsection{Funzione hash criptografica}
+Un'istanza della funzione hash implementata \`e definita nello spazio delle possibilit\`a dalla matrice $M$: primo passo nella definizione e nell'utilizzo della funzione hash criptografica \`e la generazione di una matrice adatta.
+
+A tale scopo si utilizza il predicato \codice{matrix\_random\_gf(?Matrice,+Righe,+Colonne,+Gf)}, con alcuni vincoli sui parametri:
+
+\begin{verbatim}
+  ?- matrix_random_gf(M,200,8,2097152).
+  M = [omissis]
+  
+  Yes
+\end{verbatim}
+
+i vincoli dei predicati della sezione \ref{sec:lattice} corrispondono in questo modo: le righe della matrice \`e il parametro $m$, le colonne il parametro $n$ e $q$ \`e il campo Gf.
+
+Una possibile invocazione completa del predicato in cui si verifica la propriet\`a di assenza di collisioni \`e la seguente, in cui due differenti stringhe di bit (in cui un solo bit viene variato) vengono codificate e stampate sul prompt.
+
+\begin{verbatim}
+  ?- matrix_random_gf(M,200,8,2097152).
+     latthash(M,2097152,[0,1,1,0,1,0],HashUno),
+     latthash(M,2097152,[0,1,0,0,1,0],HashDue),
+  
+  M = [omissis]
+  Hash = [883291,1947550,1391636,221071,1580643,1034153,1183208,
+         505000],
+  Hash2 = [2033960,1025484,1450139,1788920,318689,1053857,757559,
+         461851]
+  
+  Yes
+\end{verbatim}
+
+La natura casuale della matrice M rende l'esecuzione qui riportata unica, ma dimostra la totale scorrelazione delle due immagini nel codominio bench\`e siano vicine nel dominio.
+
+%
+%
+\subsection{Cifratura a chiave pubblica}
+Generazione della chiave... cript... decript... sequenza completa...
+
+%?- lattice_pk_priv_gen(8,2,Private), lattice_pk_pub_gen(Private,Public),
+%     lattice_pk_encrypt("Corso di Logica II", CypherText, Public),
+%     lattice_pk_decrypt(CypherText, PlainText, Private, Public),
+%     string_to_list(Testo,PlainText).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Test automatico}
+Tutti i moduli delle librerie di base sono sotto test automatico per mezzo di PlUnit~\cite{Plunit}, modulo dell'interprete SWI-Prolog: per ogni predicato \`e stato definito almeno un caso di test, cercando di testare ogni clausola nelle istanziazioni pi\`u significative.
+In corrispondenza di ogni modulo \`e stato creato un file sorgente \codice{test-NOMEMODULO.pl}, ed \`e possibile eseguire automaticamente tutti i test dal file Prolog \codice{test-all.pl} oppure in ambiente Unix digitando \codice{make test} dalla root del progetto.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusioni}\label{sec:conclusioni}
+Il linguaggio Prolog ha permesso di sviluppare le implementazioni in maniera snella ed efficace, ottenendo programmi compatti e facilmente interpretabili. Gli strumenti messi a disposizione dal progetto \emph{SWI-Prolog} hanno permesso di costruire test automatici in modo semplice e chiaro, ereditando pragmaticamente una pratica Agile tipica del mondo procedurale.
+
+Unica nota dolente riguarda le operazioni matriciali pi\`u complesse, che tuttavia avrebbero potuto essere implementate in linguaggio C sacrificando per esse l'impostazione dichiarativa in virt\`u di una maggiore velocit\`a esecutiva. Rimane comunque il fatto che l'implementazione si \`e dimostrata per noi valida a fini didattici, per meglio comprendere gli algoritmi implementati ed i loro punti deboli.
+
+% Bibliografia
+%%
+\bibliography{biblio}
+\bibliographystyle{unsrt}
+  
+\end{document}
